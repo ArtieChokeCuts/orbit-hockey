@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>ORBIT HOCKEY | SENTINEL MODE</title>
+    <title>ORBIT HOCKEY | TACTILE HD</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
         
@@ -59,7 +59,7 @@
 
 <div id="start-screen">
     <h1>ORBIT HOCKEY</h1>
-    <p>SENTINEL AUTO-PILOT // WATCH MODE</p>
+    <p>TACTILE ASCENT ENGINE // FIRST TO 10</p>
     <button id="start-btn" class="action-btn">INITIATE LINK</button>
 </div>
 
@@ -188,7 +188,6 @@ tableGroup.add(tableMesh);
 const edges = new THREE.EdgesGeometry(new THREE.BoxGeometry(14, 0.2, 26));
 tableGroup.add(new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.3 })));
 
-// Center line
 const centerLine = new THREE.Mesh(new THREE.PlaneGeometry(14, 0.05), new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.5 }));
 centerLine.rotation.x = -Math.PI / 2;
 centerLine.position.y = 0.11;
@@ -196,8 +195,6 @@ tableGroup.add(centerLine);
 scene.add(tableGroup);
 
 // ===== VISUAL ENHANCEMENTS (GOALS / MARKERS) =====
-
-// Faint “rink outline” (just readability)
 const rinkOutline = new THREE.LineSegments(
   new THREE.EdgesGeometry(new THREE.BoxGeometry(14, 0.01, 26)),
   new THREE.LineBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.15 })
@@ -205,26 +202,20 @@ const rinkOutline = new THREE.LineSegments(
 rinkOutline.position.y = 0.11;
 scene.add(rinkOutline);
 
-// Goal frame (posts + crossbar)
 function createGoalFrame(z, color) {
     const frameMat = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9 });
-
-    // Visual frame width matches your scoring window (|x| < 3.5)
     const w = 7.0;
     const h = 2.5;
-
     const points = [
         new THREE.Vector3(-w/2, 0.15, z),
         new THREE.Vector3(-w/2, h,    z),
         new THREE.Vector3( w/2, h,    z),
         new THREE.Vector3( w/2, 0.15, z),
     ];
-
     const geo = new THREE.BufferGeometry().setFromPoints(points);
     const line = new THREE.Line(geo, frameMat);
     scene.add(line);
 
-    // Soft halo (duplicate line, lower opacity)
     const glow = line.clone();
     glow.material = frameMat.clone();
     glow.material.opacity = 0.35;
@@ -232,7 +223,6 @@ function createGoalFrame(z, color) {
     scene.add(glow);
 }
 
-// Goal “mouth” glow on the surface (helps aim)
 function addGoalMouthGlow(z, color) {
     const glowMat = new THREE.MeshBasicMaterial({
         color,
@@ -240,7 +230,6 @@ function addGoalMouthGlow(z, color) {
         opacity: 0.15,
         side: THREE.DoubleSide
     });
-
     const mouth = new THREE.Mesh(
         new THREE.PlaneGeometry(7, 1.2),
         glowMat
@@ -250,7 +239,6 @@ function addGoalMouthGlow(z, color) {
     scene.add(mouth);
 }
 
-// Pulse goal lights on score (visual juice)
 function pulseGoalLights(colorHex) {
     scene.traverse(obj => {
         if (obj.isPointLight && obj.color.getHex() === colorHex) {
@@ -281,23 +269,31 @@ function createGoalLight(z, color) {
 createGoalLight(13, 0x00ffff);
 createGoalLight(-13, 0xff0055);
 
-// Add the new visual goal markers (NO gameplay changes)
 createGoalFrame(13, 0x00ffff);
 createGoalFrame(-13, 0xff0055);
 addGoalMouthGlow(13, 0x00ffff);
 addGoalMouthGlow(-13, 0xff0055);
 
-// --- INPUT HANDLER (DISABLED FOR AUTO-PILOT) ---
+// --- MANUAL INPUT HANDLER (RESTORED) ---
 let vel = { x: 0, z: 0 };
 const mouse = new THREE.Vector2();
 const raycaster = new THREE.Raycaster();
 const tablePlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.3);
 const intersectPoint = new THREE.Vector3();
 
-// We keep the function but don't attach listeners so AI can take over
 function handlePointer(e) {
-    // Manual control disabled in Sentinel Mode
+    if(!isPlaying || !e.isPrimary) return;
+    mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+    if(raycaster.ray.intersectPlane(tablePlane, intersectPoint)) {
+        player.position.x = Math.max(-5.5, Math.min(5.5, intersectPoint.x));
+        player.position.z = Math.max(0.6, Math.min(11.5, intersectPoint.z));
+    }
 }
+
+window.addEventListener('pointermove', handlePointer);
+window.addEventListener('pointerdown', handlePointer);
 
 // --- GAME LOGIC ---
 const bgTrack = new Audio('background.mp3');
@@ -342,10 +338,7 @@ function updatePhysics() {
             puck.position.z > 0 ? cScore++ : pScore++;
 
             triggerImpact('goal', cpuScored ? '#ff0055' : '#00ffff');
-
-            // NEW: pulse the correct goal light (visual only)
             pulseGoalLights(cpuScored ? 0xff0055 : 0x00ffff);
-
             announceScore();
             
             if (pScore >= goalLimit || cScore >= goalLimit) {
@@ -369,10 +362,8 @@ function updatePhysics() {
         }
     });
 
-    // --- AI LOGIC (BOTH SIDES) ---
+    // --- AI LOGIC (CPU ONLY) ---
     cpu.position.x += (puck.position.x - cpu.position.x) * (0.09 + pScore * 0.005);
-    player.position.x += (puck.position.x - player.position.x) * (0.12 + pScore * 0.005);
-    player.position.x = Math.max(-5.5, Math.min(5.5, player.position.x));
 }
 
 function updateVisuals() {
