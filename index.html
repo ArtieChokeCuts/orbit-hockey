@@ -25,13 +25,14 @@
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
     }
 
+    /* Two-canvas stack */
     #wrap {
       position: fixed;
       inset: 0;
       width: 100vw;
       height: 100vh;
       background: #000;
-      touch-action: none;
+      touch-action: none; /* prevents browser gestures from stealing input */
     }
 
     canvas {
@@ -112,6 +113,7 @@
       opacity: 0.85;
     }
 
+    /* tiny hint in corner */
     #fsHint {
       position: absolute;
       right: 14px;
@@ -127,7 +129,9 @@
 
 <body>
   <div id="wrap">
+    <!-- Background starfield canvas -->
     <canvas id="bg"></canvas>
+    <!-- Gameplay canvas -->
     <canvas id="game"></canvas>
 
     <div id="hud">
@@ -154,6 +158,25 @@
 
 <script>
 (() => {
+  // ======================
+  //  BEEF-UP SWITCHES
+  // ======================
+  // "dual"   = your original style (both paddles bias toward pointer)
+  // "classic"= simple air-hockey (player-left + AI-right, easier)
+  const CONTROL_MODE = "dual"; // <- change to "classic" if you want
+
+  // Color palette (top-tier, still clean)
+  const COLORS = {
+    fieldOuter: "rgba(120,200,255,0.95)",
+    fieldInner: "rgba(255,255,255,0.90)",
+    leftGlow:   "rgba(80,180,255,0.80)",
+    leftFill:   "rgba(140,220,255,0.92)",
+    rightGlow:  "rgba(255,120,190,0.75)",
+    rightFill:  "rgba(255,170,220,0.90)",
+    puckGlow:   "rgba(255,255,255,0.65)",
+    puckEdge:   "rgba(80,180,255,0.85)"
+  };
+
   // ======== DOM ========
   const bgCanvas = document.getElementById("bg");
   const gameCanvas = document.getElementById("game");
@@ -169,50 +192,8 @@
   const promptSmall = document.getElementById("promptSmall");
   const centerPrompt = document.getElementById("centerPrompt");
 
-  // ======== Game State ========
-  const state = {
-    mode: "menu", // menu | playing | gameover
-    left: 0,
-    right: 0,
-    altitude: 0,
-    winScore: 10,
-    time: 0
-  };
-
   // ======== DPI + Resize ========
   let W = 0, H = 0, DPR = 1;
-
-  // ======== Entities (defined BEFORE fit now) ========
-  const puck = { x: 0, y: 0, vx: 0, vy: 0, r: 10 };
-  const paddleL = { x: 0, y: 0, vx: 0, vy: 0, r: 44 };
-  const paddleR = { x: 0, y: 0, vx: 0, vy: 0, r: 44 };
-
-  // ======== Physics (base values, DPR applied in fit) ========
-  const PHYS = {
-    airDrag: 0.995,
-    puckDrag: 0.992,
-    paddleDrag: 0.90,
-    bounce: 0.98,
-    wallBounce: 0.96,
-    maxSpeed: 24,        // *DPR set in fit
-    nudge: 0.10,         // *DPR set in fit
-    orbitPull: 0.00035   // *DPR set in fit
-  };
-
-  // ======== Starfield ========
-  const stars = [];
-  function initStars() {
-    stars.length = 0;
-    const count = Math.floor((W * H) / (16000 * DPR));
-    for (let i = 0; i < count; i++) {
-      stars.push({
-        x: Math.random() * W,
-        y: Math.random() * H,
-        z: 0.2 + Math.random() * 0.8,
-        r: (0.6 + Math.random() * 1.3) * DPR
-      });
-    }
-  }
 
   function fit() {
     DPR = Math.max(1, window.devicePixelRatio || 1);
@@ -225,18 +206,6 @@
         c.height = H;
       }
     }
-
-    // DPR-scaled sizes
-    puck.r = 10 * DPR;
-    paddleL.r = 44 * DPR;
-    paddleR.r = 44 * DPR;
-
-    // DPR-scaled physics
-    PHYS.maxSpeed = 24 * DPR;
-    PHYS.nudge = 0.10 * DPR;
-    PHYS.orbitPull = 0.00035 * DPR;
-
-    initStars();
   }
 
   window.addEventListener("resize", fit);
@@ -254,7 +223,11 @@
   }
 
   // ======== Input ========
-  const input = { x: 0, y: 0, down: false };
+  const input = {
+    x: 0, y: 0,
+    down: false,
+    lastDownAt: 0,
+  };
 
   function pointerPos(e) {
     const rect = gameCanvas.getBoundingClientRect();
@@ -267,9 +240,13 @@
   function onDown(e) {
     pointerPos(e);
     input.down = true;
+    input.lastDownAt = performance.now();
+
     requestFS();
 
-    if (state.mode === "menu" || state.mode === "gameover") startMatch();
+    if (state.mode === "menu") startMatch();
+    else if (state.mode === "gameover") startMatch();
+
     e.preventDefault?.();
   }
   function onMove(e) { pointerPos(e); e.preventDefault?.(); }
@@ -279,7 +256,45 @@
   window.addEventListener("pointermove", onMove, { passive: false });
   window.addEventListener("pointerup", onUp, { passive: false });
 
-  // ======== Particles ========
+  // ======== Game State ========
+  const state = {
+    mode: "menu", // menu | playing | paused | gameover
+    left: 0,
+    right: 0,
+    altitude: 0,
+    winScore: 10,
+    time: 0
+  };
+
+  // ======== “Floaty” physics settings ========
+  const PHYS = {
+    airDrag: 0.995,
+    puckDrag: 0.992,
+    paddleDrag: 0.90,
+    bounce: 0.98,
+    wallBounce: 0.96,
+    maxSpeed: 24 * DPR,
+    nudge: 0.30 * DPR,
+    orbitPull: 0.0009 * DPR,
+  };
+
+  // ======== Entities ========
+  const puck = {
+    x: 0, y: 0, vx: 0, vy: 0,
+    r: 10 * DPR
+  };
+
+  const paddleL = {
+    x: 0, y: 0, vx: 0, vy: 0,
+    r: 44 * DPR
+  };
+
+  const paddleR = {
+    x: 0, y: 0, vx: 0, vy: 0,
+    r: 44 * DPR
+  };
+
+  // Particles (small, tasteful)
   const sparks = [];
   function addSparks(x, y, n=14) {
     for (let i=0;i<n;i++) {
@@ -292,7 +307,6 @@
     }
   }
 
-  // ======== Core ========
   function resetPositions() {
     puck.x = W/2; puck.y = H/2;
     puck.vx = (Math.random() < 0.5 ? -1 : 1) * (7*DPR);
@@ -312,7 +326,7 @@
     state.mode = "playing";
     centerPrompt.style.display = "none";
     stateText.textContent = "Engaged";
-    tipsText.textContent = "Drag on your side";
+    tipsText.textContent = (CONTROL_MODE === "classic") ? "Drag on LEFT side" : "Move pointer/touch to steer";
     resetPositions();
   }
 
@@ -325,14 +339,26 @@
     tipsText.textContent = "Tap to Restart";
   }
 
-  // ======== Starfield draw ========
-  function drawStarfield() {
+  // ======== Starfield (Background Layer) ========
+  const stars = [];
+  function initStars() {
+    stars.length = 0;
+    const count = Math.floor((W*H) / (16000 * DPR));
+    for (let i=0;i<count;i++) {
+      stars.push({
+        x: Math.random()*W,
+        y: Math.random()*H,
+        z: 0.2 + Math.random()*0.8,
+        r: (0.6 + Math.random()*1.3) * DPR
+      });
+    }
+  }
+  initStars();
+
+  function drawStarfield(dt) {
     bg.clearRect(0,0,W,H);
 
-    const grd = bg.createRadialGradient(
-      W*0.5, H*0.5, Math.min(W,H)*0.05,
-      W*0.5, H*0.5, Math.max(W,H)*0.65
-    );
+    const grd = bg.createRadialGradient(W*0.5, H*0.5, Math.min(W,H)*0.05, W*0.5, H*0.5, Math.max(W,H)*0.65);
     grd.addColorStop(0, "rgba(10,18,32,0.85)");
     grd.addColorStop(1, "rgba(0,0,0,0.95)");
     bg.fillStyle = grd;
@@ -345,7 +371,6 @@
     for (const s of stars) {
       s.x += driftX * (0.6 + s.z);
       s.y += driftY * (0.6 + s.z);
-
       if (s.x < -10) s.x = W+10;
       if (s.x > W+10) s.x = -10;
       if (s.y < -10) s.y = H+10;
@@ -359,7 +384,7 @@
     bg.globalAlpha = 1;
   }
 
-  // ======== Rendering ========
+  // ======== Gameplay Rendering ========
   function drawField() {
     g.clearRect(0,0,W,H);
 
@@ -369,26 +394,27 @@
     g.save();
     g.globalAlpha = 0.28;
     g.lineWidth = 10 * DPR;
-    g.strokeStyle = "rgba(80,180,255,0.95)";
+    g.strokeStyle = COLORS.fieldOuter;
     g.beginPath();
     g.arc(cx, cy, radius, 0, Math.PI*2);
     g.stroke();
 
     g.globalAlpha = 0.18;
     g.lineWidth = 3 * DPR;
-    g.strokeStyle = "rgba(255,255,255,0.9)";
+    g.strokeStyle = COLORS.fieldInner;
     g.beginPath();
     g.arc(cx, cy, radius*0.82, 0, Math.PI*2);
     g.stroke();
 
+    // center dot
     g.globalAlpha = 0.20;
     g.fillStyle = "rgba(255,255,255,1)";
     g.beginPath();
     g.arc(cx, cy, 3*DPR, 0, Math.PI*2);
     g.fill();
 
-    // center divider
-    g.globalAlpha = 0.16;
+    // center divider (beef-up for air hockey readability)
+    g.globalAlpha = 0.14;
     g.setLineDash([10*DPR, 12*DPR]);
     g.lineWidth = 2 * DPR;
     g.strokeStyle = "rgba(255,255,255,0.9)";
@@ -405,13 +431,8 @@
   function drawPaddle(p, side) {
     g.save();
 
-    const glow = side === "L"
-      ? "rgba(80,180,255,0.80)"
-      : "rgba(255,120,190,0.75)";
-
-    const fill = side === "L"
-      ? "rgba(140,220,255,0.92)"
-      : "rgba(255,170,220,0.90)";
+    const glow = (side === "L") ? COLORS.leftGlow : COLORS.rightGlow;
+    const fill = (side === "L") ? COLORS.leftFill : COLORS.rightFill;
 
     g.shadowColor = glow;
     g.shadowBlur = 22 * DPR;
@@ -422,8 +443,8 @@
     g.fill();
 
     g.shadowBlur = 0;
-    g.globalAlpha = 0.30;
-    g.strokeStyle = "rgba(0,0,0,0.88)";
+    g.globalAlpha = 0.28;
+    g.strokeStyle = "rgba(0,0,0,0.9)";
     g.lineWidth = 2*DPR;
     g.beginPath();
     g.arc(p.x, p.y, p.r*0.72, 0, Math.PI*2);
@@ -435,7 +456,7 @@
 
   function drawPuck() {
     g.save();
-    g.shadowColor = "rgba(255,255,255,0.65)";
+    g.shadowColor = COLORS.puckGlow;
     g.shadowBlur = 18 * DPR;
 
     g.fillStyle = "rgba(255,255,255,0.95)";
@@ -445,7 +466,7 @@
 
     g.shadowBlur = 0;
     g.globalAlpha = 0.22;
-    g.strokeStyle = "rgba(80,180,255,0.9)";
+    g.strokeStyle = COLORS.puckEdge;
     g.lineWidth = 2*DPR;
     g.beginPath();
     g.arc(puck.x, puck.y, puck.r*0.65, 0, Math.PI*2);
@@ -468,23 +489,14 @@
     g.globalAlpha = 1;
   }
 
-  // ======== Physics helpers ========
-  function applyDrag(obj, drag) { obj.vx *= drag; obj.vy *= drag; }
-
+  // ======== Physics Helpers ========
   function clampSpeed(obj) {
     const sp = Math.hypot(obj.vx, obj.vy);
     if (sp > PHYS.maxSpeed) {
       const k = PHYS.maxSpeed / sp;
-      obj.vx *= k; obj.vy *= k;
+      obj.vx *= k;
+      obj.vy *= k;
     }
-  }
-
-  function softOrbitPull(obj) {
-    const cx = W/2, cy = H/2;
-    const dx = cx - obj.x;
-    const dy = cy - obj.y;
-    obj.vx += dx * PHYS.orbitPull;
-    obj.vy += dy * PHYS.orbitPull;
   }
 
   function collideCircle(a, b) {
@@ -513,60 +525,98 @@
     }
   }
 
-  // ======== AI + Controls (simple air-hockey back-and-forth) ========
-  function updateAIPaddle() {
+  function softOrbitPull(obj) {
+    const cx = W/2, cy = H/2;
+    const dx = cx - obj.x;
+    const dy = cy - obj.y;
+    obj.vx += dx * PHYS.orbitPull;
+    obj.vy += dy * PHYS.orbitPull;
+  }
+
+  function applyDrag(obj, drag) {
+    obj.vx *= drag;
+    obj.vy *= drag;
+  }
+
+  // ======== AI (only used in classic mode) ========
+  function updateAIRight() {
     const pad = 10*DPR;
     const minX = W/2 + paddleR.r + pad;
     const maxX = W - paddleR.r - pad;
 
-    const targetX = Math.max(minX, Math.min(maxX, puck.x));
-    const targetY = Math.max(paddleR.r + pad, Math.min(H - paddleR.r - pad, puck.y));
+    const tx = Math.max(minX, Math.min(maxX, puck.x));
+    const ty = Math.max(paddleR.r+pad, Math.min(H - paddleR.r - pad, puck.y));
 
-    const aiFollow = 0.0026; // higher = harder
-    const aiDrag = 0.88;
+    // tuned to still feel floaty
+    paddleR.vx += (tx - paddleR.x) * 0.0026;
+    paddleR.vy += (ty - paddleR.y) * 0.0026;
 
-    paddleR.vx += (targetX - paddleR.x) * aiFollow;
-    paddleR.vy += (targetY - paddleR.y) * aiFollow;
-
-    applyDrag(paddleR, aiDrag);
+    applyDrag(paddleR, 0.88);
 
     paddleR.x += paddleR.vx;
     paddleR.y += paddleR.vy;
 
     paddleR.x = Math.max(minX, Math.min(maxX, paddleR.x));
-    paddleR.y = Math.max(paddleR.r + pad, Math.min(H - paddleR.r - pad, paddleR.y));
+    paddleR.y = Math.max(paddleR.r+pad, Math.min(H - paddleR.r - pad, paddleR.y));
   }
 
+  // ======== Controls ========
   function updatePaddles() {
     if (state.mode !== "playing") return;
 
     const pad = 10*DPR;
-    const minX = paddleL.r + pad;
-    const maxX = W/2 - paddleL.r - pad;
 
-    const tx = Math.max(minX, Math.min(maxX, input.x));
-    const ty = Math.max(paddleL.r + pad, Math.min(H - paddleL.r - pad, input.y));
+    if (CONTROL_MODE === "classic") {
+      // Player-left only (stays left half)
+      const minX = paddleL.r + pad;
+      const maxX = W/2 - paddleL.r - pad;
+      const tx = Math.max(minX, Math.min(maxX, input.x));
+      const ty = Math.max(paddleL.r+pad, Math.min(H - paddleL.r - pad, input.y));
 
-    const playerFollow = 0.0065;
+      paddleL.vx += (tx - paddleL.x) * 0.0065;
+      paddleL.vy += (ty - paddleL.y) * 0.0065;
 
-    paddleL.vx += (tx - paddleL.x) * playerFollow;
-    paddleL.vy += (ty - paddleL.y) * playerFollow;
+      applyDrag(paddleL, 0.82);
 
-    applyDrag(paddleL, 0.82);
+      paddleL.x += paddleL.vx;
+      paddleL.y += paddleL.vy;
+
+      paddleL.x = Math.max(minX, Math.min(maxX, paddleL.x));
+      paddleL.y = Math.max(paddleL.r+pad, Math.min(H - paddleL.r - pad, paddleL.y));
+
+      updateAIRight();
+      return;
+    }
+
+    // ====== YOUR ORIGINAL "DUAL" CONTROL ======
+    const target = { x: input.x, y: input.y };
+
+    const biasLeft = (input.x < W/2) ? 1.0 : 0.35;
+    const biasRight = (input.x >= W/2) ? 1.0 : 0.35;
+
+    paddleL.vx += (target.x - paddleL.x) * 0.0022 * biasLeft;
+    paddleL.vy += (target.y - paddleL.y) * 0.0022 * biasLeft;
+
+    paddleR.vx += (target.x - paddleR.x) * 0.0022 * biasRight;
+    paddleR.vy += (target.y - paddleR.y) * 0.0022 * biasRight;
+
+    applyDrag(paddleL, PHYS.paddleDrag);
+    applyDrag(paddleR, PHYS.paddleDrag);
 
     paddleL.x += paddleL.vx;
     paddleL.y += paddleL.vy;
+    paddleR.x += paddleR.vx;
+    paddleR.y += paddleR.vy;
 
-    paddleL.x = Math.max(minX, Math.min(maxX, paddleL.x));
-    paddleL.y = Math.max(paddleL.r + pad, Math.min(H - paddleL.r - pad, paddleL.y));
-
-    updateAIPaddle();
+    for (const p of [paddleL, paddleR]) {
+      p.x = Math.max(p.r+pad, Math.min(W - p.r - pad, p.x));
+      p.y = Math.max(p.r+pad, Math.min(H - p.r - pad, p.y));
+    }
   }
 
   // ======== Scoring ========
   function checkScore() {
     const goalBand = 28 * DPR;
-
     if (puck.x < goalBand) {
       state.right++;
       scoreR.textContent = state.right;
@@ -581,19 +631,27 @@
     if (state.right >= state.winScore) endMatch("right");
   }
 
-  // ======== Loop ========
+  // ======== Main Update ========
   let last = performance.now();
   function tick(now) {
     const dt = Math.min(34, now - last);
     last = now;
     state.time = now;
 
-    drawStarfield();
+    // (keep your original safety check)
+    if (bgCanvas.width !== W || bgCanvas.height !== H) {
+      fit();
+      initStars();
+      resetPositions();
+    }
+
+    drawStarfield(dt);
 
     if (state.mode === "menu") {
       drawField();
       puck.x = W/2 + Math.sin(now*0.0012)*120*DPR;
       puck.y = H/2 + Math.cos(now*0.0011)*70*DPR;
+      puck.r = 10*DPR;
       drawPuck();
 
       promptBig.textContent = "Initiate Link";
@@ -616,39 +674,42 @@
       puck.x += puck.vx;
       puck.y += puck.vy;
 
-      // Wall bounce
+      // Wall bounces
       if (puck.y < puck.r) { puck.y = puck.r; puck.vy = Math.abs(puck.vy) * PHYS.wallBounce; }
       if (puck.y > H - puck.r) { puck.y = H - puck.r; puck.vy = -Math.abs(puck.vy) * PHYS.wallBounce; }
 
+      // Collisions with paddles
       collideCircle(paddleL, puck);
       collideCircle(paddleR, puck);
 
+      // Keep puck speed sane
       clampSpeed(puck);
 
-      // gentle nudge (keeps your “float-control feel” without playing itself)
+      // “magnet nudge” toward puck when paddles are near
       for (const p of [paddleL, paddleR]) {
         const dx = puck.x - p.x;
         const dy = puck.y - p.y;
         const d = Math.hypot(dx, dy);
-        if (d > 0 && d < p.r * 2.6) {
+        if (d > 0 && d < p.r*2.6) {
           puck.vx += (dx/d) * PHYS.nudge * 0.03;
           puck.vy += (dy/d) * PHYS.nudge * 0.03;
         }
       }
 
       // Sparks update
-      for (let i = sparks.length - 1; i >= 0; i--) {
+      for (let i=sparks.length-1;i>=0;i--) {
         const s = sparks[i];
         s.life -= 1;
         s.x += s.vx;
         s.y += s.vy;
         s.vx *= PHYS.airDrag;
         s.vy *= PHYS.airDrag;
-        if (s.life <= 0) sparks.splice(i, 1);
+        if (s.life <= 0) sparks.splice(i,1);
       }
 
       checkScore();
 
+      // Altitude = “match energy”
       state.altitude += (Math.abs(puck.vx) + Math.abs(puck.vy)) * 0.0009;
       altitudeEl.textContent = Math.floor(state.altitude);
 
@@ -659,7 +720,7 @@
       drawSparks();
 
       stateText.textContent = "Engaged";
-      tipsText.textContent = "Drag on your side";
+      tipsText.textContent = (CONTROL_MODE === "classic") ? "Drag on LEFT side" : "Move pointer/touch to steer";
     }
 
     if (state.mode === "gameover") {
@@ -673,9 +734,11 @@
     requestAnimationFrame(tick);
   }
 
-  // Boot
+  // Boot state
+  state.mode = "menu";
   resetPositions();
   requestAnimationFrame(tick);
+
 })();
 </script>
 </body>
