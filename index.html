@@ -67,19 +67,15 @@
 <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/postprocessing/UnrealBloomPass.js"></script>
 
 <script>
-/**
- * ORBIT HOCKEY - STABLE HIGH-DEF BUILD
- */
-
 let pScore = 0, cScore = 0, altitude = 0, holdTimer = 0;
 const goalLimit = 10;
 let isPlaying = false;
 
 // 1. ENGINE SETUP
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x000000, 0.02); // Adds depth to the void
+scene.fog = new THREE.FogExp2(0x000000, 0.015);
 
-const camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.1, 4000);
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.1, 5000);
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -93,13 +89,20 @@ const composer = new THREE.EffectComposer(renderer);
 composer.addPass(renderScene);
 composer.addPass(bloomPass);
 
-// 3. ENVIRONMENT (DYNAMIC STARFIELD)
-const starCount = 8000;
+// 3. PARALLAX STAR ENGINE (CONSTANT MOVEMENT)
+const starCount = 6000;
 const starGeo = new THREE.BufferGeometry();
 const starPos = new Float32Array(starCount * 3);
-for(let i=0; i<starCount*3; i++) starPos[i] = THREE.MathUtils.randFloatSpread(2500);
+const starVel = new Float32Array(starCount); 
+
+for(let i=0; i<starCount; i++) {
+    starPos[i*3] = THREE.MathUtils.randFloatSpread(3000); 
+    starPos[i*3+1] = THREE.MathUtils.randFloatSpread(3000); 
+    starPos[i*3+2] = THREE.MathUtils.randFloatSpread(3000); 
+    starVel[i] = 5 + Math.random() * 15; 
+}
 starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
-const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({color: 0xaaaaaa, size: 1.0, transparent: true}));
+const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({color: 0xffffff, size: 1.5, transparent: true, opacity: 0.9}));
 scene.add(stars);
 
 // 4. SLEEK TABLE DESIGN
@@ -110,23 +113,20 @@ const tableMesh = new THREE.Mesh(
 );
 tableGroup.add(tableMesh);
 
-// Centerline & Circle (Sleeker visuals)
 const lineMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.5 });
 const centerLine = new THREE.Mesh(new THREE.PlaneGeometry(14, 0.05), lineMat);
 centerLine.rotation.x = -Math.PI / 2;
 centerLine.position.y = 0.11;
 tableGroup.add(centerLine);
-
 scene.add(tableGroup);
 
-// Goals (Neon Markers)
 function createGoalMarker(z, color) {
     const light = new THREE.PointLight(color, 2, 10);
     light.position.set(0, 0.5, z);
     scene.add(light);
 }
-createGoalMarker(13, 0x00ffff); // Player side
-createGoalMarker(-13, 0xff0055); // CPU side
+createGoalMarker(13, 0x00ffff);
+createGoalMarker(-13, 0xff0055);
 
 // 5. GAME ENTITIES
 const puck = new THREE.Mesh(
@@ -165,6 +165,10 @@ window.addEventListener('mousemove', (e) => {
 });
 
 // 8. AUDIO & LOGIC
+const bgTrack = new Audio('background.mp3');
+bgTrack.loop = true;
+bgTrack.volume = 0.4; 
+
 function announce(text) {
     const msg = new SpeechSynthesisUtterance(text);
     msg.rate = 0.95; msg.pitch = 0.8;
@@ -182,14 +186,12 @@ function updatePhysics() {
     puck.position.x += vel.x;
     puck.position.z += vel.z;
 
-    // Walls
     if (Math.abs(puck.position.x) > 6.5) {
         vel.x *= -1;
-        puck.position.x = Math.sign(puck.position.x) * 6.5; // Prevent sticking
+        puck.position.x = Math.sign(puck.position.x) * 6.5; 
         spawnSparks(puck.position.x, puck.position.z, 0x00ffff);
     }
     
-    // Scoring
     if (Math.abs(puck.position.z) > 13) {
         if (Math.abs(puck.position.x) < 3.5) {
             puck.position.z > 0 ? cScore++ : pScore++;
@@ -201,17 +203,15 @@ function updatePhysics() {
         }
     }
 
-    // Mallet Hits
     [player, cpu].forEach(m => {
         if (puck.position.distanceTo(m.position) < 1.7) {
             const angle = Math.atan2(puck.position.z - m.position.z, puck.position.x - m.position.x);
-            vel.x = Math.cos(angle) * 0.55; // Slightly faster reflections
+            vel.x = Math.cos(angle) * 0.55; 
             vel.z = Math.sin(angle) * 0.55;
             spawnSparks(puck.position.x, puck.position.z, m === player ? 0x00ffff : 0xff0055);
         }
     });
 
-    // 3-Second Rule
     const isStalling = puck.position.distanceTo(player.position) < 2.5 || puck.position.distanceTo(cpu.position) < 2.5;
     if (isStalling && Math.abs(vel.x) < 0.08 && Math.abs(vel.z) < 0.08) {
         holdTimer += 0.016;
@@ -222,20 +222,22 @@ function updatePhysics() {
         document.getElementById('penalty-warning').style.display = 'none';
     }
 
-    // AI Tracking
     cpu.position.x += (puck.position.x - cpu.position.x) * (0.08 + pScore * 0.005);
 }
 
 function updateVisuals() {
-    // Stars moving forward
     const pos = starGeo.attributes.position.array;
-    for(let i=0; i<pos.length; i+=3) {
-        pos[i+2] += 2 + (pScore * 1.5);
-        if(pos[i+2] > 1200) pos[i+2] = -1200;
+    for(let i=0; i<starCount; i++) {
+        pos[i*3+2] += starVel[i] + (altitude * 0.01); 
+        
+        if(pos[i*3+2] > 1000) {
+            pos[i*3+2] = -3000;
+            pos[i*3] = THREE.MathUtils.randFloatSpread(3000); 
+            pos[i*3+1] = THREE.MathUtils.randFloatSpread(3000); 
+        }
     }
     starGeo.attributes.position.needsUpdate = true;
 
-    // Sparks fading
     for(let i=sparkParticles.length-1; i>=0; i--) {
         const p = sparkParticles[i];
         p.mesh.position.x += p.vx;
@@ -245,7 +247,6 @@ function updateVisuals() {
         if(p.life <= 0) { scene.remove(p.mesh); sparkParticles.splice(i, 1); }
     }
 
-    // Dynamic Camera (Ascent)
     altitude = (pScore + cScore) * 125;
     document.getElementById('alt-val').innerText = Math.floor(altitude);
     camera.position.set(0, 18 + (altitude/100), 20 + (altitude/200));
@@ -264,16 +265,16 @@ function animate() {
     requestAnimationFrame(animate);
     updatePhysics();
     updateVisuals();
-    composer.render(); // High-Def Render
+    composer.render(); 
 }
 
-// 9. INITIALIZATION
+// 9. INITIALIZATION & BEAT DROP
 document.getElementById('start-btn').addEventListener('click', () => {
     document.getElementById('start-screen').style.display = 'none';
     document.getElementById('ui').style.display = 'block';
     
-    // Unlock Audio Context
     announce("Link initiated. Atmospheric ascent starting.");
+    bgTrack.play().catch(err => console.log("Audio locked:", err));
     
     isPlaying = true;
     resetPlay();
