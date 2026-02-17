@@ -9,7 +9,6 @@
         
         body { margin: 0; background: #000; overflow: hidden; font-family: 'Orbitron', sans-serif; user-select: none; }
         
-        /* SLEEK HUD UI */
         #ui {
             position: absolute; top: 40px; left: 40px;
             color: #fff; pointer-events: none; z-index: 10; display: none;
@@ -19,7 +18,6 @@
         .score-row { font-size: 32px; font-weight: 900; letter-spacing: 4px; text-shadow: 0 0 10px #00ffff; }
         .alt-row { font-size: 14px; color: #00ffff; margin-top: 5px; letter-spacing: 2px; }
         
-        /* PENALTY WARNING */
         #penalty-warning { 
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
             color: #ff0055; font-size: 40px; font-weight: 900; display: none;
@@ -27,7 +25,6 @@
             background: rgba(20, 0, 0, 0.8); padding: 20px 40px; border: 2px solid #ff0055;
         }
 
-        /* START SCREEN */
         #start-screen {
             position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
             background: radial-gradient(circle at center, #001122 0%, #000000 100%);
@@ -71,11 +68,11 @@ let pScore = 0, cScore = 0, altitude = 0, holdTimer = 0;
 const goalLimit = 10;
 let isPlaying = false;
 
-// 1. ENGINE SETUP
+// 1. ENGINE SETUP (Fog density dropped so stars are visible)
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x000000, 0.015);
+scene.fog = new THREE.FogExp2(0x000000, 0.0003); 
 
-const camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.1, 5000);
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.1, 8000);
 const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -89,20 +86,20 @@ const composer = new THREE.EffectComposer(renderer);
 composer.addPass(renderScene);
 composer.addPass(bloomPass);
 
-// 3. PARALLAX STAR ENGINE (CONSTANT MOVEMENT)
-const starCount = 6000;
+// 3. PARALLAX STAR ENGINE (Constant Movement)
+const starCount = 8000;
 const starGeo = new THREE.BufferGeometry();
 const starPos = new Float32Array(starCount * 3);
 const starVel = new Float32Array(starCount); 
 
 for(let i=0; i<starCount; i++) {
-    starPos[i*3] = THREE.MathUtils.randFloatSpread(3000); 
-    starPos[i*3+1] = THREE.MathUtils.randFloatSpread(3000); 
-    starPos[i*3+2] = THREE.MathUtils.randFloatSpread(3000); 
-    starVel[i] = 5 + Math.random() * 15; 
+    starPos[i*3] = THREE.MathUtils.randFloatSpread(4000); // X
+    starPos[i*3+1] = THREE.MathUtils.randFloatSpread(4000); // Y
+    starPos[i*3+2] = THREE.MathUtils.randFloatSpread(4000); // Z
+    starVel[i] = 10 + Math.random() * 20; // High base speed
 }
 starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
-const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({color: 0xffffff, size: 1.5, transparent: true, opacity: 0.9}));
+const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({color: 0xffffff, size: 2.0, transparent: true, opacity: 0.9}));
 scene.add(stars);
 
 // 4. SLEEK TABLE DESIGN
@@ -145,10 +142,10 @@ scene.add(player, cpu);
 const sparkParticles = [];
 function spawnSparks(x, z, color) {
     for(let i=0; i<20; i++) {
-        const p = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1), new THREE.MeshBasicMaterial({ color: color }));
+        const p = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 0.15), new THREE.MeshBasicMaterial({ color: color }));
         p.position.set(x, 0.3, z);
         scene.add(p);
-        sparkParticles.push({ mesh: p, vx: (Math.random()-0.5)*0.8, vz: (Math.random()-0.5)*0.8, life: 1.0 });
+        sparkParticles.push({ mesh: p, vx: (Math.random()-0.5)*1.2, vz: (Math.random()-0.5)*1.2, life: 1.0 });
     }
 }
 
@@ -226,14 +223,16 @@ function updatePhysics() {
 }
 
 function updateVisuals() {
+    // HYPER-DRIVE STAR MOVEMENT (Now highly visible and extremely fast)
     const pos = starGeo.attributes.position.array;
     for(let i=0; i<starCount; i++) {
-        pos[i*3+2] += starVel[i] + (altitude * 0.01); 
+        // Multiplier heavily jumps based on score to sell the "level up"
+        pos[i*3+2] += starVel[i] + (altitude * 0.05); 
         
-        if(pos[i*3+2] > 1000) {
+        if(pos[i*3+2] > 2000) {
             pos[i*3+2] = -3000;
-            pos[i*3] = THREE.MathUtils.randFloatSpread(3000); 
-            pos[i*3+1] = THREE.MathUtils.randFloatSpread(3000); 
+            pos[i*3] = THREE.MathUtils.randFloatSpread(4000); 
+            pos[i*3+1] = THREE.MathUtils.randFloatSpread(4000); 
         }
     }
     starGeo.attributes.position.needsUpdate = true;
@@ -247,9 +246,12 @@ function updateVisuals() {
         if(p.life <= 0) { scene.remove(p.mesh); sparkParticles.splice(i, 1); }
     }
 
-    altitude = (pScore + cScore) * 125;
+    // AGGRESSIVE CAMERA PULLBACK FOR LEVELING UP
+    altitude = (pScore + cScore) * 150;
     document.getElementById('alt-val').innerText = Math.floor(altitude);
-    camera.position.set(0, 18 + (altitude/100), 20 + (altitude/200));
+    
+    // Scale jumps much harder on the Y and Z axis so the table looks like it's falling away
+    camera.position.set(0, 16 + (altitude/30), 18 + (altitude/40));
     camera.lookAt(0, 0, 0);
 }
 
