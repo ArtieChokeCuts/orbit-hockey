@@ -2,140 +2,197 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Orbit Air Hockey</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Orbit Hockey 3D</title>
     <style>
-        body { margin: 0; background: #000; overflow: hidden; font-family: sans-serif; }
-        #game-container { position: relative; width: 100vw; height: 100vh; }
-        canvas { position: absolute; top: 0; left: 0; }
-        #bg-canvas { z-index: 1; }
-        #game-canvas { z-index: 2; cursor: none; }
-        #ui { 
-            position: absolute; z-index: 3; width: 100%; text-align: center; 
-            color: #0ff; font-size: 24px; pointer-events: none; top: 20px;
-            text-shadow: 0 0 10px #0ff;
+        body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', Courier, monospace; }
+        #ui {
+            position: absolute; top: 20px; width: 100%; text-align: center;
+            color: #00ffff; font-size: 24px; pointer-events: none; z-index: 10;
+            text-shadow: 0 0 10px #00ffff;
+        }
+        #instructions {
+            position: absolute; bottom: 20px; width: 100%; text-align: center;
+            color: rgba(0, 255, 255, 0.5); font-size: 14px; z-index: 10;
         }
     </style>
 </head>
 <body>
 
-<div id="game-container">
-    <div id="ui">ALTITUDE: <span id="alt">0</span> FT</div>
-    <canvas id="bg-canvas"></canvas>
-    <canvas id="game-canvas"></canvas>
+<div id="ui">
+    YOU: <span id="player-score">0</span> | CPU: <span id="cpu-score">0</span><br>
+    <small>ALTITUDE: <span id="altitude">0</span> MI</small>
 </div>
+<div id="instructions">MOVE MOUSE/FINGER TO CONTROL MALLET | FIRST TO 10 WINS</div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
 /**
- * THE VISION: As the score/speed increases, the background transitions
- * from Earth (Clouds) to the Exosphere (Horizon) to Deep Space.
+ * ORBIT HOCKEY 3D - ARTIECHOKE SPECIAL
+ * Features: Procedural 3D Environment, AI Opponent, Atmospheric Ascent
  */
 
-const gCanvas = document.getElementById('game-canvas');
-const bCanvas = document.getElementById('bg-canvas');
-const gCtx = gCanvas.getContext('2d');
-const bCtx = bCanvas.getContext('2d');
-const altDisplay = document.getElementById('alt');
+// --- Global State ---
+let playerScore = 0, cpuScore = 0, altitude = 0;
+const goalTarget = 10;
+const clock = new THREE.Clock();
 
-let width, height, altitude = 0;
-const sprites = new Image();
-sprites.src = 'sprites.png'; // Your uploaded sheet
+// --- Scene Setup ---
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(window.devicePixelRatio);
+document.body.appendChild(renderer.domElement);
 
-// Game State
-const puck = { x: 0, y: 0, vx: 5, vy: 5, radius: 25, frame: 0 };
-const player = { x: 0, y: 0, radius: 45, color: 'blue' };
-const clouds = [];
+// --- Lighting ---
+const ambient = new THREE.AmbientLight(0x404040, 2);
+const spotLight = new THREE.SpotLight(0xffffff, 1);
+spotLight.position.set(0, 50, 0);
+scene.add(ambient, spotLight);
 
-function init() {
-    width = gCanvas.width = bCanvas.width = window.innerWidth;
-    height = gCanvas.height = bCanvas.height = window.innerHeight;
-    puck.x = width / 2;
-    puck.y = height / 2;
-    
-    // Create initial clouds
-    for(let i=0; i<5; i++) {
-        clouds.push({ x: Math.random()*width, y: Math.random()*height, s: 1 + Math.random()*2 });
-    }
-}
+// --- Floating Table (Procedural Glass/Metal) ---
+const tableGroup = new THREE.Group();
+const tableGeo = new THREE.BoxGeometry(12, 0.4, 22);
+const tableMat = new THREE.MeshPhysicalMaterial({
+    color: 0x111111,
+    metalness: 0.9,
+    roughness: 0.1,
+    transmission: 0.3, // Glass effect
+    thickness: 2
+});
+const tableMesh = new THREE.Mesh(tableGeo, tableMat);
+tableGroup.add(tableMesh);
 
-// Logic: Physics & Collision
-function update() {
-    puck.x += puck.vx;
-    puck.y += puck.vy;
-    altitude += Math.abs(puck.vx * 0.1);
-    altDisplay.innerText = Math.floor(altitude);
+// Court Lines (Neon)
+const lineMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+const centerLine = new THREE.Mesh(new THREE.PlaneGeometry(12, 0.1), lineMat);
+centerLine.rotation.x = -Math.PI / 2;
+centerLine.position.y = 0.21;
+tableGroup.add(centerLine);
 
-    // Wall Bounces
-    if (puck.x + puck.radius > width || puck.x - puck.radius < 0) puck.vx *= -1;
-    if (puck.y + puck.radius > height || puck.y - puck.radius < 0) puck.vy *= -1;
+scene.add(tableGroup);
 
-    // Mallet Collision (Circle-to-Circle)
-    const dx = puck.x - player.x;
-    const dy = puck.y - player.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
+// --- The Earth (Bottom View) ---
+const earthGeo = new THREE.SphereGeometry(200, 64, 64);
+const earthMat = new THREE.MeshStandardMaterial({
+    color: 0x1133ff,
+    emissive: 0x001144,
+    wireframe: true // Looks cool and digital
+});
+const earth = new THREE.Mesh(earthGeo, earthMat);
+earth.position.y = -400;
+scene.add(earth);
 
-    if (distance < puck.radius + player.radius) {
-        // Simple Physics: Push puck away from mallet center
-        const angle = Math.atan2(dy, dx);
-        const speed = Math.sqrt(puck.vx**2 + puck.vy**2) + 1; // Speed ramp
-        puck.vx = Math.cos(angle) * speed;
-        puck.vy = Math.sin(angle) * speed;
-    }
+// --- Game Objects ---
+const puck = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.6, 0.6, 0.3, 32),
+    new THREE.MeshStandardMaterial({ color: 0x00ffff, emissive: 0x00ffff, emissiveIntensity: 2 })
+);
+puck.position.y = 0.4;
+scene.add(puck);
 
-    // Move Clouds
-    clouds.forEach(c => {
-        c.y += c.s + (altitude * 0.001); // Clouds speed up as you "climb"
-        if(c.y > height) { c.y = -100; c.x = Math.random()*width; }
-    });
-}
+const playerMallet = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 0.6, 32), new THREE.MeshStandardMaterial({ color: 0x0000ff }));
+const cpuMallet = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 0.6, 32), new THREE.MeshStandardMaterial({ color: 0xff0000 }));
+playerMallet.position.set(0, 0.5, 9);
+cpuMallet.position.set(0, 0.5, -9);
+scene.add(playerMallet, cpuMallet);
 
-// Draw: Sprite Mapping
-function draw() {
-    gCtx.clearRect(0, 0, width, height);
-    bCtx.clearRect(0, 0, width, height);
+// --- Physics State ---
+let puckVel = { x: 0, z: 0 };
+const mouse = new THREE.Vector2();
 
-    // 1. Draw Background (The Underneath)
-    if (altitude < 5000) {
-        // Level 1: Clouds (Mapped from your sprite sheet bottom-left)
-        clouds.forEach(c => {
-            // drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh)
-            gCtx.globalAlpha = 0.4;
-            gCtx.drawImage(sprites, 0, 500, 250, 150, c.x, c.y, 200, 120);
-            gCtx.globalAlpha = 1.0;
-        });
-    } else if (altitude < 15000) {
-        // Level 2: Horizon (Mid-layer)
-        bCtx.drawImage(sprites, 400, 450, 600, 250, 0, height - 300, width, 300);
-    } else {
-        // Level 3: Space (Bottom layers)
-        bCtx.drawImage(sprites, 0, 750, 330, 250, 0, 0, width, height);
-    }
-
-    // 2. Draw Puck (Animated Frame Loop)
-    const pFrame = Math.floor(Date.now() / 100) % 3;
-    gCtx.drawImage(sprites, 530 + (pFrame * 160), 0, 150, 150, puck.x - 40, puck.y - 40, 80, 80);
-
-    // 3. Draw Player Mallet
-    gCtx.drawImage(sprites, 0, 250, 120, 120, player.x - 50, player.y - 50, 100, 100);
-
-    requestAnimationFrame(() => {
-        update();
-        draw();
-    });
-}
-
-// Input Handling
+// --- Input ---
 window.addEventListener('mousemove', (e) => {
-    player.x = e.clientX;
-    player.y = e.clientY;
+    mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+    mouse.z = (e.clientY / window.innerHeight) * 2 - 1;
+    
+    // Move mallet based on mouse, lock to bottom half
+    playerMallet.position.x = mouse.x * 6;
+    playerMallet.position.z = Math.max(0.5, mouse.z * 11);
 });
 
-window.addEventListener('resize', init);
+// --- Core Logic ---
+function resetPuck() {
+    puck.position.set(0, 0.4, 0);
+    puckVel = { x: (Math.random() - 0.5) * 0.2, z: 0.15 };
+    document.getElementById('player-score').innerText = playerScore;
+    document.getElementById('cpu-score').innerText = cpuScore;
+}
 
-// Start
-sprites.onload = () => {
-    init();
-    draw();
-};
+function updatePhysics() {
+    puck.position.x += puckVel.x;
+    puck.position.z += puckVel.z;
+
+    // Wall Bounces
+    if (Math.abs(puck.position.x) > 5.5) puckVel.x *= -1.05;
+
+    // Goal Check
+    if (Math.abs(puck.position.z) > 11) {
+        if (Math.abs(puck.position.x) < 2.5) {
+            puck.position.z > 0 ? cpuScore++ : playerScore++;
+            resetPuck();
+        } else {
+            puckVel.z *= -1.05;
+        }
+    }
+
+    // Mallet Collisions (Circle-to-Circle)
+    [playerMallet, cpuMallet].forEach(m => {
+        const dx = puck.position.x - m.position.x;
+        const dz = puck.position.z - m.position.z;
+        const dist = Math.sqrt(dx*dx + dz*dz);
+        if (dist < 1.6) {
+            const angle = Math.atan2(dz, dx);
+            const force = 0.25;
+            puckVel.x = Math.cos(angle) * force;
+            puckVel.z = Math.sin(angle) * force;
+        }
+    });
+
+    // AI Logic
+    const cpuSpeed = 0.08 + (playerScore * 0.01); // Gets harder
+    if (puck.position.z < 0) {
+        if (cpuMallet.position.x < puck.position.x) cpuMallet.position.x += cpuSpeed;
+        if (cpuMallet.position.x > puck.position.x) cpuMallet.position.x -= cpuSpeed;
+    }
+}
+
+function updateAscent() {
+    altitude = (playerScore + cpuScore) * 50 + (Date.now() % 1000 / 100);
+    document.getElementById('altitude').innerText = Math.floor(altitude);
+
+    // Dynamic Camera (The Ascent)
+    camera.position.y = 12 + (altitude / 100);
+    camera.position.z = 12 + (altitude / 200);
+    camera.lookAt(0, 0, 0);
+    
+    // Earth Rotation
+    earth.rotation.y += 0.001;
+    earth.position.y = -400 - (altitude * 2);
+}
+
+function animate() {
+    if (playerScore >= goalTarget || cpuScore >= goalTarget) {
+        document.getElementById('ui').innerHTML = playerScore >= goalTarget ? "YOU CONQUERED THE ORBIT" : "SYSTEM OVERRIDE: CPU WINS";
+        return;
+    }
+    
+    requestAnimationFrame(animate);
+    updatePhysics();
+    updateAscent();
+    renderer.render(scene, camera);
+}
+
+// --- Start ---
+resetPuck();
+animate();
+
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
 </script>
 </body>
 </html>
