@@ -2,12 +2,14 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ORBIT HOCKEY | TACTILE HD BUILD</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ORBIT HOCKEY | TACTILE HD</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
         
-        body { margin: 0; background: #000; overflow: hidden; font-family: 'Orbitron', sans-serif; user-select: none; touch-action: none; }
+        /* touch-action: none and user-select: none completely kill browser input lag */
+        body { margin: 0; background: #000; overflow: hidden; font-family: 'Orbitron', sans-serif; user-select: none; touch-action: none; -webkit-user-select: none; }
+        canvas { touch-action: none; }
         
         #ui {
             position: absolute; top: 40px; left: 40px;
@@ -23,9 +25,9 @@
             color: #ff0055; font-size: 40px; font-weight: 900; display: none;
             text-shadow: 0 0 20px #ff0055; z-index: 20; letter-spacing: 5px;
             background: rgba(20, 0, 0, 0.8); padding: 20px 40px; border: 2px solid #ff0055;
+            pointer-events: none;
         }
 
-        /* HARDWARE ACCELERATED FLASH (High Performance) */
         #flash {
             position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
             background: #fff; opacity: 0; pointer-events: none; z-index: 50;
@@ -88,11 +90,19 @@ const goalLimit = 10;
 let isPlaying = false;
 let audioCtx;
 
+// --- FULLSCREEN API ---
+function goFullScreen() {
+    const doc = window.document;
+    const docEl = doc.documentElement;
+    const requestFullScreen = docEl.requestFullscreen || docEl.mozRequestFullScreen || docEl.webkitRequestFullScreen || docEl.msRequestFullscreen;
+    if (requestFullScreen && !doc.fullscreenElement) {
+        requestFullScreen.call(docEl).catch(err => console.warn("Fullscreen blocked by browser:", err));
+    }
+}
+
 // --- WEB AUDIO API (MIDI SYNTH) ---
 function initAudio() {
-    if (!audioCtx) {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if (audioCtx.state === 'suspended') audioCtx.resume();
 }
 
@@ -112,7 +122,6 @@ function playMIDI(freq, type, duration, vol = 0.5) {
 
 // --- VISUAL FLASH & TACTILE VIBRATION ---
 function triggerImpact(type, color = '#ffffff') {
-    // 1. Screen Flash (High Performance CSS)
     const flash = document.getElementById('flash');
     flash.style.transition = 'none';
     flash.style.background = color;
@@ -122,7 +131,6 @@ function triggerImpact(type, color = '#ffffff') {
         flash.style.opacity = '0';
     }, 20);
 
-    // 2. MIDI & Haptics
     if (type === 'wall') {
         playMIDI(150, 'sawtooth', 0.1, 0.3);
         if (navigator.vibrate) navigator.vibrate(20);
@@ -154,7 +162,7 @@ const composer = new THREE.EffectComposer(renderer);
 composer.addPass(renderScene);
 composer.addPass(bloomPass);
 
-// --- STARS & ENVIRONMENT ---
+// --- STARS ---
 const starCount = 6000;
 const starGeo = new THREE.BufferGeometry();
 const starPos = new Float32Array(starCount * 3);
@@ -170,7 +178,7 @@ starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
 const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({color: 0xffffff, size: 2.0, transparent: true, opacity: 0.8}));
 scene.add(stars);
 
-// --- TABLE & ENTITIES ---
+// --- TABLE ---
 const tableGroup = new THREE.Group();
 const tableMesh = new THREE.Mesh(
     new THREE.BoxGeometry(14, 0.2, 26),
@@ -207,33 +215,33 @@ function createGoalLight(z, color) {
 createGoalLight(13, 0x00ffff);
 createGoalLight(-13, 0xff0055);
 
-// --- INPUT (RAYCASTER) ---
+// --- HIGH-SPEED INPUT (POINTER EVENTS) ---
 let vel = { x: 0, z: 0 };
 const mouse = new THREE.Vector2();
 const raycaster = new THREE.Raycaster();
 const tablePlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.3);
 const intersectPoint = new THREE.Vector3();
 
-function handleInput(clientX, clientY) {
-    if(!isPlaying) return;
-    mouse.x = (clientX / window.innerWidth) * 2 - 1;
-    mouse.y = -(clientY / window.innerHeight) * 2 + 1;
+function handlePointer(e) {
+    if(!isPlaying || !e.isPrimary) return;
+    mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
     raycaster.setFromCamera(mouse, camera);
-    raycaster.ray.intersectPlane(tablePlane, intersectPoint);
-    player.position.x = Math.max(-5.5, Math.min(5.5, intersectPoint.x));
-    player.position.z = Math.max(0.6, Math.min(11.5, intersectPoint.z));
+    if(raycaster.ray.intersectPlane(tablePlane, intersectPoint)) {
+        player.position.x = Math.max(-5.5, Math.min(5.5, intersectPoint.x));
+        player.position.z = Math.max(0.6, Math.min(11.5, intersectPoint.z));
+    }
 }
 
-window.addEventListener('mousemove', (e) => handleInput(e.clientX, e.clientY));
-window.addEventListener('touchmove', (e) => { e.preventDefault(); handleInput(e.touches[0].clientX, e.touches[0].clientY); }, { passive: false });
-window.addEventListener('touchstart', (e) => { handleInput(e.touches[0].clientX, e.touches[0].clientY); }, { passive: false });
+// Unified Pointer API for zero-latency tracking
+window.addEventListener('pointermove', handlePointer);
+window.addEventListener('pointerdown', handlePointer);
 
 // --- GAME LOGIC ---
 const bgTrack = new Audio('background.mp3');
 bgTrack.loop = true; bgTrack.volume = 0.4; 
 
 function announceScore() {
-    // Limited to score only.
     const msg = new SpeechSynthesisUtterance(`${pScore} to ${cScore}`);
     msg.rate = 0.95; msg.pitch = 0.8;
     window.speechSynthesis.speak(msg);
@@ -260,14 +268,12 @@ function updatePhysics() {
     puck.position.x += vel.x;
     puck.position.z += vel.z;
 
-    // Walls
     if (Math.abs(puck.position.x) > 6.5) {
         vel.x *= -1;
         puck.position.x = Math.sign(puck.position.x) * 6.5; 
         triggerImpact('wall', '#00ffff');
     }
     
-    // Scoring
     if (Math.abs(puck.position.z) > 13) {
         if (Math.abs(puck.position.x) < 3.5) {
             puck.position.z > 0 ? cScore++ : pScore++;
@@ -286,7 +292,6 @@ function updatePhysics() {
         }
     }
 
-    // Mallets
     [player, cpu].forEach(m => {
         if (puck.position.distanceTo(m.position) < 1.7) {
             const angle = Math.atan2(puck.position.z - m.position.z, puck.position.x - m.position.x);
@@ -296,7 +301,6 @@ function updatePhysics() {
         }
     });
 
-    // Stalling Logic
     const isStalling = puck.position.distanceTo(player.position) < 2.5 || puck.position.distanceTo(cpu.position) < 2.5;
     if (isStalling && Math.abs(vel.x) < 0.08 && Math.abs(vel.z) < 0.08) {
         holdTimer += 0.016;
@@ -307,7 +311,6 @@ function updatePhysics() {
         document.getElementById('penalty-warning').style.display = 'none';
     }
 
-    // AI Tracking
     cpu.position.x += (puck.position.x - cpu.position.x) * (0.09 + pScore * 0.005);
 }
 
@@ -335,8 +338,9 @@ function animate() {
     composer.render(); 
 }
 
-// --- CONTROLS ---
+// --- INITIALIZATION ---
 document.getElementById('start-btn').addEventListener('click', () => {
+    goFullScreen();
     initAudio();
     document.getElementById('start-screen').style.display = 'none';
     document.getElementById('ui').style.display = 'block';
@@ -347,8 +351,8 @@ document.getElementById('start-btn').addEventListener('click', () => {
     animate();
 });
 
-// Tap to Restart Logic
 document.getElementById('game-over').addEventListener('click', () => {
+    goFullScreen();
     pScore = 0; cScore = 0; altitude = 0; holdTimer = 0;
     document.getElementById('game-over').style.display = 'none';
     document.getElementById('ui').style.display = 'block';
