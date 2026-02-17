@@ -187,6 +187,14 @@
         c.height = H;
       }
     }
+
+    // keep sizes consistent after DPR changes
+    puck.r = 10 * DPR;
+    paddleL.r = 44 * DPR;
+    paddleR.r = 44 * DPR;
+
+    // rebuild stars for new size
+    initStars();
   }
 
   window.addEventListener("resize", fit);
@@ -212,7 +220,6 @@
 
   function pointerPos(e) {
     const rect = gameCanvas.getBoundingClientRect();
-    // Convert to CSS pixels then to canvas pixels (DPR)
     const cx = (e.clientX - rect.left);
     const cy = (e.clientY - rect.top);
     input.x = cx * DPR;
@@ -224,10 +231,8 @@
     input.down = true;
     input.lastDownAt = performance.now();
 
-    // First interaction: try fullscreen (safe)
     requestFS();
 
-    // Start / Restart logic
     if (state.mode === "menu") startMatch();
     else if (state.mode === "gameover") startMatch();
 
@@ -242,7 +247,7 @@
 
   // ======== Game State ========
   const state = {
-    mode: "menu", // menu | playing | paused | gameover
+    mode: "menu",
     left: 0,
     right: 0,
     altitude: 0,
@@ -250,36 +255,24 @@
     time: 0
   };
 
-  // ======== “Floaty” physics settings ========
-  // This is where your signature feel lives. Tweak here, not randomly elsewhere.
+  // ======== Physics Settings (float preserved, “magic” reduced) ========
   const PHYS = {
-    airDrag: 0.995,     // closer to 1 = more float
+    airDrag: 0.995,
     puckDrag: 0.992,
     paddleDrag: 0.90,
-    bounce: 0.98,       // energy retention
+    bounce: 0.98,
     wallBounce: 0.96,
-    maxSpeed: 24 * DPR, // cap to prevent chaos on high-DPR devices
-    nudge: 0.30 * DPR,  // how hard paddles pull puck (magnet feel)
-    orbitPull: 0.0009 * DPR, // gentle center pull for “orbit”
+    maxSpeed: 24 * DPR,
+    nudge: 0.10 * DPR,        // reduced magnet
+    orbitPull: 0.00035 * DPR  // reduced orbit pull
   };
 
   // ======== Entities ========
-  const puck = {
-    x: 0, y: 0, vx: 0, vy: 0,
-    r: 10 * DPR
-  };
+  const puck = { x: 0, y: 0, vx: 0, vy: 0, r: 10 * DPR };
+  const paddleL = { x: 0, y: 0, vx: 0, vy: 0, r: 44 * DPR };
+  const paddleR = { x: 0, y: 0, vx: 0, vy: 0, r: 44 * DPR };
 
-  const paddleL = {
-    x: 0, y: 0, vx: 0, vy: 0,
-    r: 44 * DPR
-  };
-
-  const paddleR = {
-    x: 0, y: 0, vx: 0, vy: 0,
-    r: 44 * DPR
-  };
-
-  // Particles (small, tasteful)
+  // Particles
   const sparks = [];
   function addSparks(x, y, n=14) {
     for (let i=0;i<n;i++) {
@@ -311,7 +304,7 @@
     state.mode = "playing";
     centerPrompt.style.display = "none";
     stateText.textContent = "Engaged";
-    tipsText.textContent = "Drag / Move to Control";
+    tipsText.textContent = "Drag on your side";
     resetPositions();
   }
 
@@ -325,11 +318,10 @@
   }
 
   // ======== Starfield (Background Layer) ========
-  // If you already have your own starfield, you can replace ONLY this section.
   const stars = [];
   function initStars() {
     stars.length = 0;
-    const count = Math.floor((W*H) / (16000 * DPR)); // density scales with size
+    const count = Math.floor((W*H) / (16000 * DPR));
     for (let i=0;i<count;i++) {
       stars.push({
         x: Math.random()*W,
@@ -342,17 +334,14 @@
   initStars();
 
   function drawStarfield(dt) {
-    // subtle motion = premium feel
     bg.clearRect(0,0,W,H);
 
-    // soft vignette-ish gradient
     const grd = bg.createRadialGradient(W*0.5, H*0.5, Math.min(W,H)*0.05, W*0.5, H*0.5, Math.max(W,H)*0.65);
     grd.addColorStop(0, "rgba(10,18,32,0.85)");
     grd.addColorStop(1, "rgba(0,0,0,0.95)");
     bg.fillStyle = grd;
     bg.fillRect(0,0,W,H);
 
-    // drift
     const driftX = Math.sin(state.time*0.00025) * 0.18 * DPR;
     const driftY = Math.cos(state.time*0.00022) * 0.14 * DPR;
 
@@ -377,15 +366,14 @@
   function drawField() {
     g.clearRect(0,0,W,H);
 
-    // "field" ring
     const cx = W/2, cy = H/2;
     const radius = Math.min(W,H)*0.36;
 
-    // outer glow ring
+    // outer glow ring (more neon)
     g.save();
     g.globalAlpha = 0.28;
     g.lineWidth = 10 * DPR;
-    g.strokeStyle = "rgba(120,200,255,0.9)";
+    g.strokeStyle = "rgba(80,180,255,0.95)";
     g.beginPath();
     g.arc(cx, cy, radius, 0, Math.PI*2);
     g.stroke();
@@ -397,7 +385,6 @@
     g.beginPath();
     g.arc(cx, cy, radius*0.82, 0, Math.PI*2);
     g.stroke();
-    g.restore();
 
     // center dot
     g.globalAlpha = 0.20;
@@ -405,24 +392,44 @@
     g.beginPath();
     g.arc(cx, cy, 3*DPR, 0, Math.PI*2);
     g.fill();
+
+    // center divider (air-hockey readability)
+    g.globalAlpha = 0.16;
+    g.setLineDash([10*DPR, 12*DPR]);
+    g.lineWidth = 2 * DPR;
+    g.strokeStyle = "rgba(255,255,255,0.9)";
+    g.beginPath();
+    g.moveTo(W/2, 0);
+    g.lineTo(W/2, H);
+    g.stroke();
+    g.setLineDash([]);
+
+    g.restore();
     g.globalAlpha = 1;
   }
 
   function drawPaddle(p, side) {
     g.save();
-    // subtle glow
-    g.shadowColor = side === "L" ? "rgba(80,180,255,0.65)" : "rgba(255,140,180,0.55)";
-    g.shadowBlur = 18 * DPR;
 
-    g.fillStyle = "rgba(255,255,255,0.92)";
+    const glow = side === "L"
+      ? "rgba(80,180,255,0.80)"
+      : "rgba(255,120,190,0.75)";
+
+    const fill = side === "L"
+      ? "rgba(140,220,255,0.92)"
+      : "rgba(255,170,220,0.90)";
+
+    g.shadowColor = glow;
+    g.shadowBlur = 22 * DPR;
+
+    g.fillStyle = fill;
     g.beginPath();
     g.arc(p.x, p.y, p.r, 0, Math.PI*2);
     g.fill();
 
-    // inner accent
     g.shadowBlur = 0;
-    g.globalAlpha = 0.35;
-    g.strokeStyle = "rgba(0,0,0,0.9)";
+    g.globalAlpha = 0.30;
+    g.strokeStyle = "rgba(0,0,0,0.88)";
     g.lineWidth = 2*DPR;
     g.beginPath();
     g.arc(p.x, p.y, p.r*0.72, 0, Math.PI*2);
@@ -434,8 +441,8 @@
 
   function drawPuck() {
     g.save();
-    g.shadowColor = "rgba(255,255,255,0.55)";
-    g.shadowBlur = 14 * DPR;
+    g.shadowColor = "rgba(255,255,255,0.65)";
+    g.shadowBlur = 18 * DPR;
 
     g.fillStyle = "rgba(255,255,255,0.95)";
     g.beginPath();
@@ -443,8 +450,8 @@
     g.fill();
 
     g.shadowBlur = 0;
-    g.globalAlpha = 0.30;
-    g.strokeStyle = "rgba(0,0,0,0.9)";
+    g.globalAlpha = 0.22;
+    g.strokeStyle = "rgba(80,180,255,0.9)";
     g.lineWidth = 2*DPR;
     g.beginPath();
     g.arc(puck.x, puck.y, puck.r*0.65, 0, Math.PI*2);
@@ -484,7 +491,6 @@
     const minDist = a.r + b.r;
 
     if (dist > 0 && dist < minDist) {
-      // push out
       const nx = dx / dist;
       const ny = dy / dist;
       const overlap = (minDist - dist);
@@ -492,7 +498,6 @@
       b.x += nx * overlap;
       b.y += ny * overlap;
 
-      // reflect puck velocity with some paddle influence
       const relVx = b.vx - a.vx;
       const relVy = b.vy - a.vy;
       const dot = relVx*nx + relVy*ny;
@@ -500,8 +505,6 @@
       if (dot < 0) {
         b.vx -= (1 + PHYS.bounce) * dot * nx;
         b.vy -= (1 + PHYS.bounce) * dot * ny;
-
-        // add spark + vibe
         addSparks(b.x, b.y, 10);
       }
     }
@@ -520,47 +523,62 @@
     obj.vy *= drag;
   }
 
-  // ======== AI / Controls (simple, upgradeable) ========
-  // Left paddle follows pointer when on left half; right paddle follows pointer on right half.
-  // You can swap this for keyboard controls or real AI later.
-  function updatePaddles() {
-    // split control
-    const target = { x: input.x, y: input.y };
+  // ======== AI Paddle (Right) ========
+  function updateAIPaddle() {
+    const pad = 10*DPR;
+    const minX = W/2 + paddleR.r + pad;
+    const maxX = W - paddleR.r - pad;
 
-    if (state.mode !== "playing") return;
+    const targetX = Math.max(minX, Math.min(maxX, puck.x));
+    const targetY = Math.max(paddleR.r + pad, Math.min(H - paddleR.r - pad, puck.y));
 
-    // Make paddles float toward target(s)
-    // If pointer on left, bias left paddle more; if on right, bias right paddle more.
-    const biasLeft = (input.x < W/2) ? 1.0 : 0.35;
-    const biasRight = (input.x >= W/2) ? 1.0 : 0.35;
+    const aiFollow = 0.0026; // higher = harder
+    const aiDrag = 0.88;
 
-    // Left paddle
-    paddleL.vx += (target.x - paddleL.x) * 0.0022 * biasLeft;
-    paddleL.vy += (target.y - paddleL.y) * 0.0022 * biasLeft;
+    paddleR.vx += (targetX - paddleR.x) * aiFollow;
+    paddleR.vy += (targetY - paddleR.y) * aiFollow;
 
-    // Right paddle
-    paddleR.vx += (target.x - paddleR.x) * 0.0022 * biasRight;
-    paddleR.vy += (target.y - paddleR.y) * 0.0022 * biasRight;
+    applyDrag(paddleR, aiDrag);
 
-    applyDrag(paddleL, PHYS.paddleDrag);
-    applyDrag(paddleR, PHYS.paddleDrag);
-
-    paddleL.x += paddleL.vx;
-    paddleL.y += paddleL.vy;
     paddleR.x += paddleR.vx;
     paddleR.y += paddleR.vy;
 
-    // Keep on screen
+    paddleR.x = Math.max(minX, Math.min(maxX, paddleR.x));
+    paddleR.y = Math.max(paddleR.r + pad, Math.min(H - paddleR.r - pad, paddleR.y));
+  }
+
+  // ======== Controls (Player Left vs AI Right) ========
+  function updatePaddles() {
+    if (state.mode !== "playing") return;
+
     const pad = 10*DPR;
-    for (const p of [paddleL, paddleR]) {
-      p.x = Math.max(p.r+pad, Math.min(W - p.r - pad, p.x));
-      p.y = Math.max(p.r+pad, Math.min(H - p.r - pad, p.y));
-    }
+
+    // PLAYER (LEFT) stays on left half
+    const minX = paddleL.r + pad;
+    const maxX = W/2 - paddleL.r - pad;
+
+    const tx = Math.max(minX, Math.min(maxX, input.x));
+    const ty = Math.max(paddleL.r + pad, Math.min(H - paddleL.r - pad, input.y));
+
+    const playerFollow = 0.0065;
+
+    paddleL.vx += (tx - paddleL.x) * playerFollow;
+    paddleL.vy += (ty - paddleL.y) * playerFollow;
+
+    applyDrag(paddleL, 0.82);
+
+    paddleL.x += paddleL.vx;
+    paddleL.y += paddleL.vy;
+
+    paddleL.x = Math.max(minX, Math.min(maxX, paddleL.x));
+    paddleL.y = Math.max(paddleL.r + pad, Math.min(H - paddleL.r - pad, paddleL.y));
+
+    // AI (RIGHT)
+    updateAIPaddle();
   }
 
   // ======== Scoring ========
   function checkScore() {
-    // goal zones: left/right edges
     const goalBand = 28 * DPR;
     if (puck.x < goalBand) {
       state.right++;
@@ -583,20 +601,10 @@
     last = now;
     state.time = now;
 
-    // If resize happened, keep stars density sane
-    // (low overhead: re-init if canvas got reset)
-    if (bgCanvas.width !== W || bgCanvas.height !== H) {
-      fit();
-      initStars();
-      resetPositions();
-    }
-
     drawStarfield(dt);
 
     if (state.mode === "menu") {
-      // Menu idle motion
       drawField();
-      // little drift
       puck.x = W/2 + Math.sin(now*0.0012)*120*DPR;
       puck.y = H/2 + Math.cos(now*0.0011)*70*DPR;
       puck.r = 10*DPR;
@@ -613,7 +621,6 @@
     }
 
     if (state.mode === "playing") {
-      // Update paddles
       updatePaddles();
 
       // Puck float + drag + orbit
@@ -631,10 +638,9 @@
       collideCircle(paddleL, puck);
       collideCircle(paddleR, puck);
 
-      // Keep puck speed sane
       clampSpeed(puck);
 
-      // “magnet nudge” toward puck when paddles are near (adds that float-control feel)
+      // reduced magnet nudge
       for (const p of [paddleL, paddleR]) {
         const dx = puck.x - p.x;
         const dy = puck.y - p.y;
@@ -656,14 +662,11 @@
         if (s.life <= 0) sparks.splice(i,1);
       }
 
-      // Scoring
       checkScore();
 
-      // Altitude = “match energy” (simple vibe metric)
       state.altitude += (Math.abs(puck.vx) + Math.abs(puck.vy)) * 0.0009;
       altitudeEl.textContent = Math.floor(state.altitude);
 
-      // Render
       drawField();
       drawPaddle(paddleL, "L");
       drawPaddle(paddleR, "R");
@@ -671,11 +674,10 @@
       drawSparks();
 
       stateText.textContent = "Engaged";
-      tipsText.textContent = "Move pointer/touch to steer";
+      tipsText.textContent = "Drag on your side";
     }
 
     if (state.mode === "gameover") {
-      // freeze display but keep background alive
       drawField();
       drawPaddle(paddleL, "L");
       drawPaddle(paddleR, "R");
@@ -690,7 +692,6 @@
   state.mode = "menu";
   resetPositions();
   requestAnimationFrame(tick);
-
 })();
 </script>
 </body>
