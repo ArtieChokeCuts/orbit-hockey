@@ -3,28 +3,57 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ORBIT HOCKEY | ION-DRIVE</title>
+    <title>ORBIT HOCKEY | SENTINEL BUILD</title>
     <style>
-        body { margin: 0; background: #000; overflow: hidden; font-family: 'Orbitron', sans-serif; }
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
+        
+        body { margin: 0; background: #000; overflow: hidden; font-family: 'Orbitron', sans-serif; user-select: none; }
+        
+        /* SLEEK HUD UI */
         #ui {
-            position: absolute; top: 30px; left: 30px;
-            color: #00ffff; pointer-events: none; z-index: 10;
-            text-transform: uppercase; letter-spacing: 3px;
+            position: absolute; top: 40px; left: 40px;
+            color: #fff; pointer-events: none; z-index: 10; display: none;
+            background: rgba(0, 20, 40, 0.4); padding: 15px 30px; border-left: 4px solid #00ffff;
+            backdrop-filter: blur(10px); text-transform: uppercase;
         }
-        .score-row { font-size: 36px; font-weight: 900; text-shadow: 0 0 20px #00ffff; }
-        .alt-row { font-size: 16px; opacity: 0.8; margin-top: 5px; color: #ff00ff; }
+        .score-row { font-size: 32px; font-weight: 900; letter-spacing: 4px; text-shadow: 0 0 10px #00ffff; }
+        .alt-row { font-size: 14px; color: #00ffff; margin-top: 5px; letter-spacing: 2px; }
+        
+        /* PENALTY WARNING */
         #penalty-warning { 
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            color: #ff0000; font-size: 50px; font-weight: 900; display: none;
-            text-shadow: 0 0 30px #ff0000; z-index: 20;
+            color: #ff0055; font-size: 40px; font-weight: 900; display: none;
+            text-shadow: 0 0 20px #ff0055; z-index: 20; letter-spacing: 5px;
+            background: rgba(20, 0, 0, 0.8); padding: 20px 40px; border: 2px solid #ff0055;
         }
+
+        /* START SCREEN */
+        #start-screen {
+            position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
+            background: radial-gradient(circle at center, #001122 0%, #000000 100%);
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            z-index: 100; color: #00ffff; text-align: center;
+        }
+        #start-screen h1 { font-size: 60px; margin: 0; letter-spacing: 10px; text-shadow: 0 0 20px #00ffff; }
+        #start-screen p { font-size: 18px; color: #aaa; letter-spacing: 3px; margin-bottom: 40px; }
+        #start-btn {
+            background: transparent; color: #00ffff; border: 2px solid #00ffff;
+            padding: 15px 40px; font-size: 20px; font-family: 'Orbitron', sans-serif;
+            cursor: pointer; transition: all 0.3s ease; text-transform: uppercase; letter-spacing: 3px;
+        }
+        #start-btn:hover { background: #00ffff; color: #000; box-shadow: 0 0 30px #00ffff; }
     </style>
-    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&display=swap" rel="stylesheet">
 </head>
 <body>
 
+<div id="start-screen">
+    <h1>ORBIT HOCKEY</h1>
+    <p>ATMOSPHERIC ASCENT ENGINE // FIRST TO 10</p>
+    <button id="start-btn">INITIATE LINK</button>
+</div>
+
 <div id="ui">
-    <div class="score-row"><span id="p-score">0</span> — <span id="c-score">0</span></div>
+    <div class="score-row"><span id="p-score">0</span> <span style="color:#444;">//</span> <span id="c-score" style="color:#ff0055; text-shadow: 0 0 10px #ff0055;">0</span></div>
     <div class="alt-row">ALTITUDE: <span id="alt-val">0</span> MI</div>
 </div>
 <div id="penalty-warning">STALLING DETECTED</div>
@@ -32,200 +61,231 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/postprocessing/EffectComposer.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/postprocessing/RenderPass.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/shaders/CopyShader.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/shaders/LuminosityHighPassShader.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/postprocessing/ShaderPass.js"></script>
 <script src="https://cdn.jsdelivr.net/gh/mrdoob/three.js@r128/examples/js/postprocessing/UnrealBloomPass.js"></script>
 
 <script>
 /**
- * ORBIT HOCKEY ON STEROIDS
- * - 3-Second Holding Penalty
- * - Procedural Star-Stream (Z-Axis Movement)
- * - Voice Synthesis Score Calling
- * - Spark & Neon Particle Engine
+ * ORBIT HOCKEY - STABLE HIGH-DEF BUILD
  */
 
-let pScore = 0, cScore = 0, altitude = 0;
-let holdTimer = 0;
+let pScore = 0, cScore = 0, altitude = 0, holdTimer = 0;
 const goalLimit = 10;
+let isPlaying = false;
 
-// 1. SCENE CORE
+// 1. ENGINE SETUP
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 4000);
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+scene.fog = new THREE.FogExp2(0x000000, 0.02); // Adds depth to the void
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.1, 4000);
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.toneMapping = THREE.ReinhardToneMapping;
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 document.body.appendChild(renderer.domElement);
 
-// 2. BLOOM (MAX INTENSITY)
+// 2. HIGH-DEF BLOOM
 const renderScene = new THREE.RenderPass(scene, camera);
-const bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 2.5, 0.4, 0.85);
-bloomPass.threshold = 0.05;
-bloomPass.strength = 2.0; 
-bloomPass.radius = 0.6;
+const bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.8, 0.5, 0.85);
+bloomPass.threshold = 0.1;
 const composer = new THREE.EffectComposer(renderer);
 composer.addPass(renderScene);
 composer.addPass(bloomPass);
 
-// 3. MOVING STARFIELD
-const starCount = 10000;
+// 3. ENVIRONMENT (DYNAMIC STARFIELD)
+const starCount = 8000;
 const starGeo = new THREE.BufferGeometry();
 const starPos = new Float32Array(starCount * 3);
-for(let i=0; i<starCount*3; i++) starPos[i] = THREE.MathUtils.randFloatSpread(2000);
+for(let i=0; i<starCount*3; i++) starPos[i] = THREE.MathUtils.randFloatSpread(2500);
 starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
-const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({color: 0xffffff, size: 1.5, transparent: true}));
+const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({color: 0xaaaaaa, size: 1.0, transparent: true}));
 scene.add(stars);
 
-// 4. THE TABLE & NEON GOALS
-const table = new THREE.Mesh(
+// 4. SLEEK TABLE DESIGN
+const tableGroup = new THREE.Group();
+const tableMesh = new THREE.Mesh(
     new THREE.BoxGeometry(14, 0.2, 26),
-    new THREE.MeshPhysicalMaterial({ color: 0x000000, metalness: 1, roughness: 0.05, transmission: 0.8, thickness: 1.5 })
+    new THREE.MeshPhysicalMaterial({ color: 0x050505, metalness: 0.9, roughness: 0.1, transmission: 0.5, thickness: 2 })
 );
-scene.add(table);
+tableGroup.add(tableMesh);
 
-function createGoal(zPos, color) {
-    const geo = new THREE.BoxGeometry(5, 0.8, 0.2);
-    const mat = new THREE.MeshBasicMaterial({ color: color });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(0, 0.5, zPos);
-    // Add glowing marker
-    const marker = new THREE.PointLight(color, 10, 15);
-    marker.position.set(0, 1, zPos);
-    scene.add(mesh, marker);
+// Centerline & Circle (Sleeker visuals)
+const lineMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.5 });
+const centerLine = new THREE.Mesh(new THREE.PlaneGeometry(14, 0.05), lineMat);
+centerLine.rotation.x = -Math.PI / 2;
+centerLine.position.y = 0.11;
+tableGroup.add(centerLine);
+
+scene.add(tableGroup);
+
+// Goals (Neon Markers)
+function createGoalMarker(z, color) {
+    const light = new THREE.PointLight(color, 2, 10);
+    light.position.set(0, 0.5, z);
+    scene.add(light);
 }
-createGoal(-13, 0xff00ff); // CPU Goal
-createGoal(13, 0x00ffff);  // Player Goal
+createGoalMarker(13, 0x00ffff); // Player side
+createGoalMarker(-13, 0xff0055); // CPU side
 
-// 5. PARTICLE ENGINE (SPARKS)
-const particleCount = 200;
-const sparkParticles = [];
-function spawnSparks(x, z, color) {
-    for(let i=0; i<30; i++) {
-        const pGeo = new THREE.SphereGeometry(0.1, 4, 4);
-        const pMat = new THREE.MeshBasicMaterial({ color: color });
-        const p = new THREE.Mesh(pGeo, pMat);
-        p.position.set(x, 0.4, z);
-        const vx = (Math.random()-0.5) * 0.5;
-        const vz = (Math.random()-0.5) * 0.5;
-        scene.add(p);
-        sparkParticles.push({ mesh: p, vx, vz, life: 1.0 });
-    }
-}
-
-// 6. GAME OBJECTS
+// 5. GAME ENTITIES
 const puck = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.6, 0.6, 0.3, 32),
-    new THREE.MeshStandardMaterial({ color: 0x00ffff, emissive: 0x00ffff, emissiveIntensity: 10 })
+    new THREE.CylinderGeometry(0.5, 0.5, 0.2, 32),
+    new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x00ffff, emissiveIntensity: 2 })
 );
 scene.add(puck);
 
-const player = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 0.6, 32), new THREE.MeshStandardMaterial({color: 0x0055ff, emissive: 0x0055ff, emissiveIntensity: 2}));
-const cpu = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 0.6, 32), new THREE.MeshStandardMaterial({color: 0xff0055, emissive: 0xff0055, emissiveIntensity: 2}));
-player.position.set(0, 0.5, 11);
-cpu.position.set(0, 0.5, -11);
+const player = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 0.4, 32), new THREE.MeshStandardMaterial({color: 0x000000, emissive: 0x00ffff, emissiveIntensity: 0.8, wireframe: true}));
+const cpu = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 0.4, 32), new THREE.MeshStandardMaterial({color: 0x000000, emissive: 0xff0055, emissiveIntensity: 0.8, wireframe: true}));
+player.position.set(0, 0.3, 10);
+cpu.position.set(0, 0.3, -10);
 scene.add(player, cpu);
 
-// 7. CORE LOGIC
+// 6. SPARK ENGINE
+const sparkParticles = [];
+function spawnSparks(x, z, color) {
+    for(let i=0; i<20; i++) {
+        const p = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1), new THREE.MeshBasicMaterial({ color: color }));
+        p.position.set(x, 0.3, z);
+        scene.add(p);
+        sparkParticles.push({ mesh: p, vx: (Math.random()-0.5)*0.8, vz: (Math.random()-0.5)*0.8, life: 1.0 });
+    }
+}
+
+// 7. GAME STATE & INPUT
 let vel = { x: 0, z: 0 };
 const mouse = new THREE.Vector2();
 
 window.addEventListener('mousemove', (e) => {
+    if(!isPlaying) return;
     mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
     mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
-    player.position.x = mouse.x * 6;
-    player.position.z = Math.max(1, -mouse.y * 13);
+    player.position.x = mouse.x * 6.5;
+    player.position.z = Math.max(1, -mouse.y * 12.5);
 });
 
+// 8. AUDIO & LOGIC
 function announce(text) {
     const msg = new SpeechSynthesisUtterance(text);
-    msg.rate = 0.9; msg.pitch = 0.7;
+    msg.rate = 0.95; msg.pitch = 0.8;
     window.speechSynthesis.speak(msg);
 }
 
-function reset() {
-    puck.position.set(0, 0.4, 0);
-    vel = { x: (Math.random()-0.5)*0.3, z: 0.2 };
+function resetPlay() {
+    puck.position.set(0, 0.3, 0);
+    vel = { x: (Math.random()-0.5)*0.4, z: (Math.random() > 0.5 ? 0.3 : -0.3) };
     document.getElementById('p-score').innerText = pScore;
     document.getElementById('c-score').innerText = cScore;
-    announce(`Score: ${pScore} to ${cScore}`);
 }
 
-function update() {
+function updatePhysics() {
     puck.position.x += vel.x;
     puck.position.z += vel.z;
 
-    // Walls & Goals
+    // Walls
     if (Math.abs(puck.position.x) > 6.5) {
         vel.x *= -1;
+        puck.position.x = Math.sign(puck.position.x) * 6.5; // Prevent sticking
         spawnSparks(puck.position.x, puck.position.z, 0x00ffff);
     }
+    
+    // Scoring
     if (Math.abs(puck.position.z) > 13) {
-        if (Math.abs(puck.position.x) < 2.5) {
+        if (Math.abs(puck.position.x) < 3.5) {
             puck.position.z > 0 ? cScore++ : pScore++;
-            announce("Goal Scored");
-            reset();
-        } else { vel.z *= -1; }
+            announce(`Score. Player ${pScore}, System ${cScore}`);
+            resetPlay();
+        } else { 
+            vel.z *= -1; 
+            puck.position.z = Math.sign(puck.position.z) * 13;
+        }
     }
 
-    // Collisions
+    // Mallet Hits
     [player, cpu].forEach(m => {
-        if (puck.position.distanceTo(m.position) < 1.8) {
+        if (puck.position.distanceTo(m.position) < 1.7) {
             const angle = Math.atan2(puck.position.z - m.position.z, puck.position.x - m.position.x);
-            vel.x = Math.cos(angle) * 0.5;
-            vel.z = Math.sin(angle) * 0.5;
-            spawnSparks(puck.position.x, puck.position.z, 0xff00ff);
+            vel.x = Math.cos(angle) * 0.55; // Slightly faster reflections
+            vel.z = Math.sin(angle) * 0.55;
+            spawnSparks(puck.position.x, puck.position.z, m === player ? 0x00ffff : 0xff0055);
         }
     });
 
-    // Penalty Logic (3 Sec Hold)
-    const isStalling = puck.position.distanceTo(player.position) < 2 || puck.position.distanceTo(cpu.position) < 2;
-    if (isStalling && Math.abs(vel.x) < 0.05) {
+    // 3-Second Rule
+    const isStalling = puck.position.distanceTo(player.position) < 2.5 || puck.position.distanceTo(cpu.position) < 2.5;
+    if (isStalling && Math.abs(vel.x) < 0.08 && Math.abs(vel.z) < 0.08) {
         holdTimer += 0.016;
         if(holdTimer > 2) document.getElementById('penalty-warning').style.display = 'block';
-        if(holdTimer > 3) { reset(); holdTimer = 0; announce("Penalty Violation"); }
+        if(holdTimer > 3) { announce("Violation. Puck reset."); resetPlay(); holdTimer = 0; }
     } else {
         holdTimer = 0;
         document.getElementById('penalty-warning').style.display = 'none';
     }
 
-    // AI & Stars
-    cpu.position.x += (puck.position.x - cpu.position.x) * 0.1;
-    
+    // AI Tracking
+    cpu.position.x += (puck.position.x - cpu.position.x) * (0.08 + pScore * 0.005);
+}
+
+function updateVisuals() {
+    // Stars moving forward
     const pos = starGeo.attributes.position.array;
     for(let i=0; i<pos.length; i+=3) {
-        pos[i+2] += 5 + (pScore * 2);
-        if(pos[i+2] > 1000) pos[i+2] = -1000;
+        pos[i+2] += 2 + (pScore * 1.5);
+        if(pos[i+2] > 1200) pos[i+2] = -1200;
     }
     starGeo.attributes.position.needsUpdate = true;
 
-    // Particle Animation
+    // Sparks fading
     for(let i=sparkParticles.length-1; i>=0; i--) {
         const p = sparkParticles[i];
         p.mesh.position.x += p.vx;
         p.mesh.position.z += p.vz;
-        p.life -= 0.02;
-        p.mesh.material.opacity = p.life;
+        p.life -= 0.03;
+        p.mesh.scale.setScalar(p.life);
         if(p.life <= 0) { scene.remove(p.mesh); sparkParticles.splice(i, 1); }
     }
 
-    // Altitude Ascent
-    altitude = (pScore + cScore) * 100;
+    // Dynamic Camera (Ascent)
+    altitude = (pScore + cScore) * 125;
     document.getElementById('alt-val').innerText = Math.floor(altitude);
-    camera.position.set(0, 15 + (altitude/40), 18 + (altitude/80));
+    camera.position.set(0, 18 + (altitude/100), 20 + (altitude/200));
     camera.lookAt(0, 0, 0);
 }
 
 function animate() {
+    if (!isPlaying) return;
+    
     if (pScore >= goalLimit || cScore >= goalLimit) {
-        announce(pScore >= goalLimit ? "Victory" : "Defeat");
-        document.body.innerHTML = "<h1 style='color:cyan; text-align:center; margin-top:20%;'>ORBIT STABLE: GAME OVER</h1>";
+        announce(pScore >= goalLimit ? "Orbit Stabilized. You win." : "System Override. You lose.");
+        document.getElementById('ui').innerHTML = `<h1 style="color:#00ffff; text-align:center; margin-top:20vh; font-size: 50px; text-shadow: 0 0 20px #00ffff;">MATCH CONCLUDED</h1>`;
         return;
     }
+    
     requestAnimationFrame(animate);
-    update();
-    composer.render();
+    updatePhysics();
+    updateVisuals();
+    composer.render(); // High-Def Render
 }
 
-reset();
-animate();
+// 9. INITIALIZATION
+document.getElementById('start-btn').addEventListener('click', () => {
+    document.getElementById('start-screen').style.display = 'none';
+    document.getElementById('ui').style.display = 'block';
+    
+    // Unlock Audio Context
+    announce("Link initiated. Atmospheric ascent starting.");
+    
+    isPlaying = true;
+    resetPlay();
+    animate();
+});
+
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    composer.setSize(window.innerWidth, window.innerHeight);
+});
 </script>
 </body>
 </html>
