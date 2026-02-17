@@ -1,5 +1,141 @@
-<html>
-  <body>
-    <h1>Coming Soon!</h1>
-  </body>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Orbit Air Hockey</title>
+    <style>
+        body { margin: 0; background: #000; overflow: hidden; font-family: sans-serif; }
+        #game-container { position: relative; width: 100vw; height: 100vh; }
+        canvas { position: absolute; top: 0; left: 0; }
+        #bg-canvas { z-index: 1; }
+        #game-canvas { z-index: 2; cursor: none; }
+        #ui { 
+            position: absolute; z-index: 3; width: 100%; text-align: center; 
+            color: #0ff; font-size: 24px; pointer-events: none; top: 20px;
+            text-shadow: 0 0 10px #0ff;
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <div id="ui">ALTITUDE: <span id="alt">0</span> FT</div>
+    <canvas id="bg-canvas"></canvas>
+    <canvas id="game-canvas"></canvas>
+</div>
+
+<script>
+/**
+ * THE VISION: As the score/speed increases, the background transitions
+ * from Earth (Clouds) to the Exosphere (Horizon) to Deep Space.
+ */
+
+const gCanvas = document.getElementById('game-canvas');
+const bCanvas = document.getElementById('bg-canvas');
+const gCtx = gCanvas.getContext('2d');
+const bCtx = bCanvas.getContext('2d');
+const altDisplay = document.getElementById('alt');
+
+let width, height, altitude = 0;
+const sprites = new Image();
+sprites.src = 'sprites.png'; // Your uploaded sheet
+
+// Game State
+const puck = { x: 0, y: 0, vx: 5, vy: 5, radius: 25, frame: 0 };
+const player = { x: 0, y: 0, radius: 45, color: 'blue' };
+const clouds = [];
+
+function init() {
+    width = gCanvas.width = bCanvas.width = window.innerWidth;
+    height = gCanvas.height = bCanvas.height = window.innerHeight;
+    puck.x = width / 2;
+    puck.y = height / 2;
+    
+    // Create initial clouds
+    for(let i=0; i<5; i++) {
+        clouds.push({ x: Math.random()*width, y: Math.random()*height, s: 1 + Math.random()*2 });
+    }
+}
+
+// Logic: Physics & Collision
+function update() {
+    puck.x += puck.vx;
+    puck.y += puck.vy;
+    altitude += Math.abs(puck.vx * 0.1);
+    altDisplay.innerText = Math.floor(altitude);
+
+    // Wall Bounces
+    if (puck.x + puck.radius > width || puck.x - puck.radius < 0) puck.vx *= -1;
+    if (puck.y + puck.radius > height || puck.y - puck.radius < 0) puck.vy *= -1;
+
+    // Mallet Collision (Circle-to-Circle)
+    const dx = puck.x - player.x;
+    const dy = puck.y - player.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    if (distance < puck.radius + player.radius) {
+        // Simple Physics: Push puck away from mallet center
+        const angle = Math.atan2(dy, dx);
+        const speed = Math.sqrt(puck.vx**2 + puck.vy**2) + 1; // Speed ramp
+        puck.vx = Math.cos(angle) * speed;
+        puck.vy = Math.sin(angle) * speed;
+    }
+
+    // Move Clouds
+    clouds.forEach(c => {
+        c.y += c.s + (altitude * 0.001); // Clouds speed up as you "climb"
+        if(c.y > height) { c.y = -100; c.x = Math.random()*width; }
+    });
+}
+
+// Draw: Sprite Mapping
+function draw() {
+    gCtx.clearRect(0, 0, width, height);
+    bCtx.clearRect(0, 0, width, height);
+
+    // 1. Draw Background (The Underneath)
+    if (altitude < 5000) {
+        // Level 1: Clouds (Mapped from your sprite sheet bottom-left)
+        clouds.forEach(c => {
+            // drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh)
+            gCtx.globalAlpha = 0.4;
+            gCtx.drawImage(sprites, 0, 500, 250, 150, c.x, c.y, 200, 120);
+            gCtx.globalAlpha = 1.0;
+        });
+    } else if (altitude < 15000) {
+        // Level 2: Horizon (Mid-layer)
+        bCtx.drawImage(sprites, 400, 450, 600, 250, 0, height - 300, width, 300);
+    } else {
+        // Level 3: Space (Bottom layers)
+        bCtx.drawImage(sprites, 0, 750, 330, 250, 0, 0, width, height);
+    }
+
+    // 2. Draw Puck (Animated Frame Loop)
+    const pFrame = Math.floor(Date.now() / 100) % 3;
+    gCtx.drawImage(sprites, 530 + (pFrame * 160), 0, 150, 150, puck.x - 40, puck.y - 40, 80, 80);
+
+    // 3. Draw Player Mallet
+    gCtx.drawImage(sprites, 0, 250, 120, 120, player.x - 50, player.y - 50, 100, 100);
+
+    requestAnimationFrame(() => {
+        update();
+        draw();
+    });
+}
+
+// Input Handling
+window.addEventListener('mousemove', (e) => {
+    player.x = e.clientX;
+    player.y = e.clientY;
+});
+
+window.addEventListener('resize', init);
+
+// Start
+sprites.onload = () => {
+    init();
+    draw();
+};
+</script>
+</body>
 </html>
